@@ -220,6 +220,24 @@ describe("provider enabled defaults", () => {
 });
 
 describe("ServerSettings worktree defaults", () => {
+  it("keeps the default base branch for legacy configs", () => {
+    expect(decodeServerSettings({}).newWorktreeBaseBranch).toBe("default");
+  });
+
+  it.each(["default", "last-used"])("preserves the %s base branch preference", (value) => {
+    const settings = decodeServerSettings({ newWorktreeBaseBranch: value });
+
+    expect(encodeServerSettings(settings).newWorktreeBaseBranch).toBe(value);
+    expect(decodeServerSettingsPatch({ newWorktreeBaseBranch: value }).newWorktreeBaseBranch).toBe(
+      value,
+    );
+  });
+
+  it("rejects unsupported base branch preferences", () => {
+    expect(() => decodeServerSettings({ newWorktreeBaseBranch: "dev" })).toThrow();
+    expect(() => decodeServerSettingsPatch({ newWorktreeBaseBranch: "dev" })).toThrow();
+  });
+
   it("defaults start-from-origin on for legacy configs", () => {
     expect(decodeServerSettings({}).newWorktreesStartFromOrigin).toBe(true);
   });

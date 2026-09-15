@@ -57,7 +57,17 @@ export function createMobilePreferencesState(runtime: Atom.AtomRuntime<MobilePre
 
   const updatePreferencesAtom = runtime
     .fn(
-      (patch: Partial<Preferences>, get) => {
+      (
+        update:
+          | Partial<Preferences>
+          | { transform: (current: Preferences) => Partial<Preferences> },
+        get,
+      ) => {
+        const snapshot = get(preferencesAtom);
+        const patch =
+          "transform" in update
+            ? update.transform(AsyncResult.isSuccess(snapshot) ? snapshot.value : {})
+            : update;
         const version = ++nextPatchVersion;
         const current = get(optimisticPatchAtom);
         const versions = { ...current.versions };
@@ -69,7 +79,9 @@ export function createMobilePreferencesState(runtime: Atom.AtomRuntime<MobilePre
           versions,
         });
         return MobilePreferencesStore.pipe(
-          Effect.flatMap((store) => store.savePatch(patch)),
+          Effect.flatMap((store) =>
+            "transform" in update ? store.update(update.transform) : store.savePatch(patch),
+          ),
           Effect.tap((saved) =>
             Effect.sync(() => {
               get.set(confirmedPreferencesAtom, saved);

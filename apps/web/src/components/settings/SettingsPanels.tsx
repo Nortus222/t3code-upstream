@@ -518,6 +518,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin
         ? ["New worktrees start from origin"]
         : []),
+      ...(settings.newWorktreeBaseBranch !== DEFAULT_UNIFIED_SETTINGS.newWorktreeBaseBranch
+        ? ["Worktree base branch"]
+        : []),
       ...(settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory
         ? ["Add project base directory"]
         : []),
@@ -550,6 +553,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.newWorktreesStartFromOrigin,
+      settings.newWorktreeBaseBranch,
       settings.diffIgnoreWhitespace,
       settings.environmentIdentificationMode,
       settings.fontFamilyCode,
@@ -655,6 +659,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       providerHealthRefreshInterval: DEFAULT_UNIFIED_SETTINGS.providerHealthRefreshInterval,
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
       newWorktreesStartFromOrigin: DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
+      newWorktreeBaseBranch: DEFAULT_UNIFIED_SETTINGS.newWorktreeBaseBranch,
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
       confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
@@ -2129,7 +2134,8 @@ export function GeneralSettingsPanel() {
           resetAction={
             settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode ||
             settings.newWorktreesStartFromOrigin !==
-              DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin ? (
+              DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin ||
+            settings.newWorktreeBaseBranch !== DEFAULT_UNIFIED_SETTINGS.newWorktreeBaseBranch ? (
               <SettingResetButton
                 label="new threads"
                 onClick={() =>
@@ -2137,6 +2143,7 @@ export function GeneralSettingsPanel() {
                     defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
                     newWorktreesStartFromOrigin:
                       DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
+                    newWorktreeBaseBranch: DEFAULT_UNIFIED_SETTINGS.newWorktreeBaseBranch,
                   })
                 }
               />
@@ -2167,6 +2174,52 @@ export function GeneralSettingsPanel() {
             </Select>
           }
         />
+
+        {settings.defaultThreadEnvMode === "worktree" ? (
+          <SettingsRow
+            className="bg-muted/20 sm:pl-9"
+            title={searchableSetting("worktree-base-branch").title}
+            description="Use the repository default or the last base branch selected for this project and environment on this device."
+            resetAction={
+              settings.newWorktreeBaseBranch !== DEFAULT_UNIFIED_SETTINGS.newWorktreeBaseBranch ? (
+                <SettingResetButton
+                  label="worktree base branch"
+                  onClick={() =>
+                    updateSettings({
+                      newWorktreeBaseBranch: DEFAULT_UNIFIED_SETTINGS.newWorktreeBaseBranch,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={settings.newWorktreeBaseBranch}
+                onValueChange={(value) => {
+                  if (value === "default" || value === "last-used") {
+                    updateSettings({ newWorktreeBaseBranch: value });
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-44" aria-label="Worktree base branch">
+                  <SelectValue>
+                    {settings.newWorktreeBaseBranch === "last-used"
+                      ? "Last used"
+                      : "Default branch"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem hideIndicator value="default">
+                    Default branch
+                  </SelectItem>
+                  <SelectItem hideIndicator value="last-used">
+                    Last used
+                  </SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
+        ) : null}
 
         {settings.defaultThreadEnvMode === "worktree" ? (
           <SettingsRow

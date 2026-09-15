@@ -62,6 +62,41 @@ function makePreferencesState(
 }
 
 describe("mobile preferences state", () => {
+  it.effect(
+    "merges a base selection with stored projects even before preferences have loaded",
+    () =>
+      Effect.gen(function* () {
+        let stored: Preferences = { lastWorktreeBaseBranchByProject: { "env-a:project-a": "dev" } };
+        const state = makePreferencesState({
+          load: Effect.sync(() => stored),
+          savePatch: (patch) =>
+            Effect.sync(() => {
+              stored = { ...stored, ...patch };
+              return stored;
+            }),
+        });
+        const registry = AtomRegistry.make();
+        const unmountUpdate = registry.mount(state.updatePreferencesAtom);
+        registry.set(state.updatePreferencesAtom, {
+          transform: (current: Preferences) => ({
+            lastWorktreeBaseBranchByProject: {
+              ...current.lastWorktreeBaseBranchByProject,
+              "env-b:project-a": "release",
+            },
+          }),
+        });
+        yield* AtomRegistry.getResult(registry, state.updatePreferencesAtom, {
+          suspendOnWaiting: true,
+        });
+        expect(stored.lastWorktreeBaseBranchByProject).toEqual({
+          "env-a:project-a": "dev",
+          "env-b:project-a": "release",
+        });
+        unmountUpdate();
+        registry.dispose();
+      }),
+  );
+
   it.effect("shares one preference load across consumers", () =>
     Effect.gen(function* () {
       const load = vi.fn(() => Promise.resolve<Preferences>({ baseFontSize: 17 }));

@@ -60,6 +60,17 @@ describe("searchSettings", () => {
     expect(searchSettings("   ", ITEMS)).toEqual([]);
   });
 
+  it("finds the worktree base preference even when its row is hidden", () => {
+    expect(searchSettings("worktree base")).toEqual([
+      {
+        id: "worktree-base-branch",
+        title: "Worktree base branch",
+        to: "/settings/general",
+        targetId: "new-threads",
+      },
+    ]);
+  });
+
   it("hides desktop-only settings from browser search", () => {
     expect(SETTINGS_SEARCH_ITEMS.some((item) => item.id === "quit-confirmation")).toBe(true);
     expect(searchSettings("quit confirmation")).toEqual([]);

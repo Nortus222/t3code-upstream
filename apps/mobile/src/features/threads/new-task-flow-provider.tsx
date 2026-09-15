@@ -1,4 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/unstable/reactivity";
+import { resolveNewWorktreeBaseBranch } from "@t3tools/client-runtime/worktree";
+import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 
 import type {
   EnvironmentId,
@@ -392,6 +396,17 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const workspaceMode = selectedProjectDraft.workspaceSelection?.mode ?? defaultWorkspaceMode;
   const selectedBranchName = selectedProjectDraft.workspaceSelection?.branch ?? null;
   const selectedWorktreePath = selectedProjectDraft.workspaceSelection?.worktreePath ?? null;
+  const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const preferencesLoaded = AsyncResult.isSuccess(preferencesResult);
+  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const rememberedBranch =
+    preferencesLoaded &&
+    selectedProject &&
+    selectedEnvironmentServerConfig?.settings.newWorktreeBaseBranch === "last-used"
+      ? (preferencesResult.value.lastWorktreeBaseBranchByProject?.[
+          scopedProjectKey(selectedProject.environmentId, selectedProject.id)
+        ] ?? null)
+      : null;
   // Keep the user's explicit choice separate from the resolved display value:
   // only the explicit flag is ever written back to the draft, so the resolved
   // value keeps tracking the server setting when the config loads late.
@@ -547,6 +562,50 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const hasMoreBranches =
     branchState.data?.nextCursor !== null && branchState.data?.nextCursor !== undefined;
   const allBranchRefs = branchState.refs;
+  const needsWorktreeBase =
+    workspaceMode === "worktree" && selectedBranchName === null && selectedWorktreePath === null;
+  const baseBranchesQuery = useEnvironmentQuery(
+    needsWorktreeBase && selectedProject?.workspaceRoot
+      ? vcsEnvironment.listRefs({
+          environmentId: selectedProject.environmentId,
+          input: { cwd: selectedProject.workspaceRoot, limit: 100 },
+        })
+      : null,
+  );
+  const rememberedBranchState = usePaginatedBranches({
+    environmentId: selectedProject?.environmentId ?? null,
+    cwd: needsWorktreeBase && rememberedBranch ? selectedProject?.workspaceRoot || null : null,
+    query: rememberedBranch?.slice(0, 256) ?? null,
+    includeMatchingRemoteRefs: true,
+  });
+  const rememberedRef = rememberedBranchState.refs.find((ref) => ref.name === rememberedBranch);
+  const hasMoreRememberedRefs = rememberedBranchState.data?.nextCursor != null;
+  const loadMoreRememberedRefs = rememberedBranchState.loadNext;
+  useEffect(() => {
+    if (
+      needsWorktreeBase &&
+      rememberedBranch &&
+      !rememberedRef &&
+      hasMoreRememberedRefs &&
+      !rememberedBranchState.isPending &&
+      !rememberedBranchState.error
+    ) {
+      loadMoreRememberedRefs();
+    }
+  }, [
+    needsWorktreeBase,
+    rememberedBranch,
+    rememberedRef,
+    hasMoreRememberedRefs,
+    rememberedBranchState.isPending,
+    rememberedBranchState.error,
+    loadMoreRememberedRefs,
+  ]);
+  const rememberedBranchPending =
+    rememberedBranch !== null &&
+    !rememberedRef &&
+    !rememberedBranchState.error &&
+    (rememberedBranchState.data === null || hasMoreRememberedRefs);
   const availableBranches = useMemo(
     () =>
       pipe(
@@ -701,7 +760,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     workspaceMode,
   ]);
 
-  const selectBranch = useCallback(
+  const applyBranchSelection = useCallback(
     (branch: VcsRef) => {
       if (!selectedProject || !selectedProjectDraftKey) {
         return;
@@ -721,6 +780,29 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       });
     },
     [draftStartFromOrigin, selectedProject, selectedProjectDraftKey, workspaceMode],
+  );
+
+  const selectBranch = useCallback(
+    (branch: VcsRef) => {
+      applyBranchSelection(branch);
+      if (workspaceMode === "worktree" && selectedProject && selectedProjectDraftKey) {
+        savePreferences({
+          transform: (current) => ({
+            lastWorktreeBaseBranchByProject: {
+              ...current.lastWorktreeBaseBranchByProject,
+              [scopedProjectKey(selectedProject.environmentId, selectedProject.id)]: branch.name,
+            },
+          }),
+        });
+      }
+    },
+    [
+      applyBranchSelection,
+      workspaceMode,
+      selectedProject,
+      selectedProjectDraftKey,
+      savePreferences,
+    ],
   );
 
   const setStartFromOrigin = useCallback(
@@ -753,25 +835,35 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   useEffect(() => {
     if (
       !defaultWorkspaceModeSettled ||
+      !preferencesLoaded ||
+      selectedEnvironmentServerConfig === null ||
+      baseBranchesQuery.data === null ||
+      rememberedBranchPending ||
       workspaceMode !== "worktree" ||
       selectedBranchName !== null
     ) {
       return;
     }
-    // The default may only exist as origin/<default> (isRemote), which
-    // availableBranches filters out — search the unfiltered refs for it.
-    const preferredBranch =
-      allBranchRefs.find((branch) => branch.isDefault) ??
-      availableBranches.find((branch) => branch.current) ??
-      null;
+    const baseRefs = rememberedRef
+      ? [...baseBranchesQuery.data.refs, rememberedRef]
+      : baseBranchesQuery.data.refs;
+    const preferredName = resolveNewWorktreeBaseBranch({
+      refs: baseRefs,
+      rememberedBranch: rememberedRef?.name ?? null,
+      currentBranch: baseBranchesQuery.data.refs.find((branch) => branch.current)?.name ?? null,
+    });
+    const preferredBranch = baseRefs.find((branch) => branch.name === preferredName);
     if (preferredBranch) {
-      selectBranch(preferredBranch);
+      applyBranchSelection(preferredBranch);
     }
   }, [
-    allBranchRefs,
-    availableBranches,
+    baseBranchesQuery.data,
     defaultWorkspaceModeSettled,
-    selectBranch,
+    preferencesLoaded,
+    selectedEnvironmentServerConfig,
+    rememberedBranchPending,
+    rememberedRef,
+    applyBranchSelection,
     selectedBranchName,
     workspaceMode,
   ]);

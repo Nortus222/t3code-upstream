@@ -1,4 +1,6 @@
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { resolveNewWorktreeBaseBranch } from "@t3tools/client-runtime/worktree";
+import { useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -31,6 +33,8 @@ import { useEnvironmentQuery } from "../state/query";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
+import { serverEnvironment } from "../state/server";
+import { useLastWorktreeBaseBranch } from "../worktreePreferences";
 import { cn } from "../lib/utils";
 import { parsePullRequestReference } from "../pullRequestReference";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
@@ -131,6 +135,9 @@ export function BranchToolbarBranchSelector({
       ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
       : null;
   const activeProject = useProject(activeProjectRef);
+  const settings = useAtomValue(serverEnvironment.settingsValueAtom(environmentId));
+  const [lastWorktreeBaseBranch, rememberWorktreeBaseBranch] =
+    useLastWorktreeBaseBranch(activeProjectRef);
 
   const activeThreadId = serverThread?.id ?? (draftThread ? threadId : undefined);
   const activeThreadBranch =
@@ -394,6 +401,7 @@ export function BranchToolbarBranchSelector({
 
     if (isSelectingWorktreeBase) {
       setThreadBranch(refName.name, null);
+      if (activeProjectRef) rememberWorktreeBaseBranch(refName.name);
       setIsBranchMenuOpen(false);
       onComposerFocusRequest?.();
       return;
@@ -486,15 +494,60 @@ export function BranchToolbarBranchSelector({
     });
   };
 
-  // Default the worktree base to the repo default branch (origin/HEAD), only
-  // falling back to the checked-out branch when no default is known.
-  const defaultBranchName = useMemo(
-    () => refs.find((refName) => refName.isDefault)?.name ?? null,
-    [refs],
+  const rememberedBranch =
+    settings?.newWorktreeBaseBranch === "last-used" ? lastWorktreeBaseBranch : null;
+  const needsWorktreeBase =
+    effectiveEnvMode === "worktree" && !activeWorktreePath && !activeThreadBranch;
+  // Keep the default independent of any search the user types while refs load.
+  const baseBranchesQuery = useEnvironmentQuery(
+    needsWorktreeBase && activeProjectCwd
+      ? vcsEnvironment.listRefs({ environmentId, input: { cwd: activeProjectCwd, limit: 100 } })
+      : null,
   );
-  const worktreeBaseBranchCandidate = isInitialBranchesLoadPending
-    ? null
-    : (defaultBranchName ?? currentGitBranch);
+  const rememberedBranchState = usePaginatedBranches({
+    environmentId,
+    cwd: needsWorktreeBase && rememberedBranch ? activeProjectCwd : null,
+    query: rememberedBranch?.slice(0, 256) ?? null,
+    includeMatchingRemoteRefs: true,
+  });
+  const rememberedRef = rememberedBranchState.refs.find((ref) => ref.name === rememberedBranch);
+  const hasMoreRememberedRefs = rememberedBranchState.data?.nextCursor != null;
+  const loadMoreRememberedRefs = rememberedBranchState.loadNext;
+  useEffect(() => {
+    if (
+      needsWorktreeBase &&
+      rememberedBranch &&
+      !rememberedRef &&
+      hasMoreRememberedRefs &&
+      !rememberedBranchState.isPending &&
+      !rememberedBranchState.error
+    ) {
+      loadMoreRememberedRefs();
+    }
+  }, [
+    needsWorktreeBase,
+    rememberedBranch,
+    rememberedRef,
+    hasMoreRememberedRefs,
+    rememberedBranchState.isPending,
+    rememberedBranchState.error,
+    loadMoreRememberedRefs,
+  ]);
+  const rememberedBranchPending =
+    rememberedBranch !== null &&
+    !rememberedRef &&
+    !rememberedBranchState.error &&
+    (rememberedBranchState.data === null || hasMoreRememberedRefs);
+  const worktreeBaseBranchCandidate =
+    settings === null || baseBranchesQuery.data === null || rememberedBranchPending
+      ? null
+      : resolveNewWorktreeBaseBranch({
+          refs: rememberedRef
+            ? [...baseBranchesQuery.data.refs, rememberedRef]
+            : baseBranchesQuery.data.refs,
+          rememberedBranch: rememberedRef?.name ?? null,
+          currentBranch: currentGitBranch,
+        });
 
   useEffect(() => {
     if (

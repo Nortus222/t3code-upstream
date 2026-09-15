@@ -142,6 +142,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "new-threads",
   },
   {
+    id: "worktree-base-branch",
+    title: "Worktree base branch",
+    to: "/settings/general",
+    targetId: "new-threads",
+  },
+  {
     id: "add-project-starts-in",
     title: "Add project starts in",
     to: "/settings/general",
