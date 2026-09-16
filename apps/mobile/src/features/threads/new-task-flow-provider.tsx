@@ -131,6 +131,7 @@ type NewTaskFlowContextValue = {
   readonly selectedModelKey: string | null;
   readonly workspaceMode: WorkspaceMode;
   readonly selectedBranchName: string | null;
+  readonly lastWorktreeBaseBranch: string | null;
   readonly selectedWorktreePath: string | null;
   readonly startFromOrigin: boolean;
   readonly draftKey: string | null;
@@ -399,13 +400,15 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const preferencesLoaded = AsyncResult.isSuccess(preferencesResult);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
-  const rememberedBranch =
-    preferencesLoaded &&
-    selectedProject &&
-    selectedEnvironmentServerConfig?.settings.newWorktreeBaseBranch === "last-used"
+  const lastWorktreeBaseBranch =
+    preferencesLoaded && selectedProject
       ? (preferencesResult.value.lastWorktreeBaseBranchByProject?.[
           scopedProjectKey(selectedProject.environmentId, selectedProject.id)
         ] ?? null)
+      : null;
+  const rememberedBranch =
+    selectedEnvironmentServerConfig?.settings.newWorktreeBaseBranch === "last-used"
+      ? lastWorktreeBaseBranch
       : null;
   // Keep the user's explicit choice separate from the resolved display value:
   // only the explicit flag is ever written back to the draft, so the resolved
@@ -1097,6 +1100,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       selectedModelKey,
       workspaceMode,
       selectedBranchName,
+      lastWorktreeBaseBranch,
       selectedWorktreePath,
       startFromOrigin,
       draftKey: selectedProjectDraftKey,
@@ -1169,6 +1173,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       loadBranches,
       loadMoreBranches,
       projectScopes,
+      lastWorktreeBaseBranch,
       modelOptions,
       prompt,
       providerGroups,

@@ -17,3 +17,5 @@ new worktree start from `origin/dev`, even if the repository's default branch is
 
 Existing drafts keep their selected branch. If there is no remembered selection or the branch
 has been deleted, T3 Code uses the default branch, or the current checkout if no default is known.
+The branch selector labels the remembered branch **Last used**, even when **Default branch** is
+selected in Settings.
